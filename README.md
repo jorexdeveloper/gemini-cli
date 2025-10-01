@@ -2,6 +2,10 @@
 
 **gem-cli** is a command-line AI assistant powered by Google Gemini.
 
+## Demo
+
+![Demo Image](./demo.png)
+
 ## 🚀 Installation
 
 Follow these steps to install **gem-cli** on your system.
