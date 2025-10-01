@@ -40,6 +40,8 @@ Configure **gem-cli** to work with your Google Gemini API key and preferences.
 
 Set your Gemini API key via environment variable or file.
 
+- **Get free API key [here](https://aistudio.google.com/app/api-keys)**
+
 - **Environment Variable**:
   ```bash
   export GEMINI_API_KEY="your_api_key_here"
