@@ -223,15 +223,24 @@ get_models() {
 	API_MESSAGE=
 
 	log -df "${from}" "Sending request to API."
-	if ! API_RESPONSE=$(
-		curl \
-			-s \
-			-H "x-goog-api-key: ${GEMINI_API_KEY}" \
-			"${API_URL}/${API_VERSION}/models"
-	); then
-		API_MESSAGE="Failed to get API response. Please check your internet connection and try again."
-		return 1
-	fi
+	trap 'trap - INT; API_MESSAGE="Failed to get API response. Please check your internet connection and try again."; return 1' INT
+
+	while true; do
+		if API_RESPONSE=$(
+			curl \
+				-s \
+				-H "x-goog-api-key: ${GEMINI_API_KEY}" \
+				"${API_URL}/${API_VERSION}/models"
+		); then
+			trap - INT
+			break
+		elif [[ ${RETRY_CONN_ERROR} ]]; then
+			continue
+		else
+			API_MESSAGE="Failed to get API response. Please check your internet connection and try again."
+			return 1
+		fi
+	done
 
 	log -df "${from}" "Processing API response."
 	if [[ ! ${API_RESPONSE} ]]; then
@@ -295,18 +304,27 @@ get_response() {
 	)
 
 	log -df "${from}" "Sending JSON payload to API."
-	if ! API_RESPONSE=$(
-		curl \
-			-s \
-			-X POST \
-			-d "${json_payload}" \
-			-H "Content-Type: application/json" \
-			-H "x-goog-api-key: ${GEMINI_API_KEY}" \
-			"${API_URL}/${API_VERSION}/${API_MODEL}:${API_METHOD}"
-	); then
-		API_MESSAGE="Failed to get API response. Please check your internet connection and try again."
-		return 1
-	fi
+	trap 'trap - INT; API_MESSAGE="Failed to get API response. Please check your internet connection and try again."; return 1' INT
+
+	while true; do
+		if API_RESPONSE=$(
+			curl \
+				-s \
+				-X POST \
+				-d "${json_payload}" \
+				-H "Content-Type: application/json" \
+				-H "x-goog-api-key: ${GEMINI_API_KEY}" \
+				"${API_URL}/${API_VERSION}/${API_MODEL}:${API_METHOD}"
+		); then
+			trap - INT
+			break
+		elif [[ ${RETRY_CONN_ERROR} ]]; then
+			continue
+		else
+			API_MESSAGE="Failed to get API response. Please check your internet connection and try again."
+			return 1
+		fi
+	done
 
 	log -df "${from}" "Processing API response."
 	if [[ ! ${API_RESPONSE} ]]; then
@@ -943,6 +961,7 @@ print_help() {
 	echo "  -Q       Alias for -rq (raw output + quiet)."
 	echo "  -l       List supported models."
 	echo "  -L INT   Set log level (0 to 5)."
+	echo "  -x       Retry on connection error. Use Ctrl+C to stop."
 	echo "  -v       Print version information and exit."
 	echo "  -h       Print help information and exit."
 	echo
@@ -1128,7 +1147,7 @@ fi
 
 log -d "Initializing program configuration."
 # Project information
-VERSION=2025.1.0.1-beta
+VERSION=2025.1.0.2-beta
 GITHUB=https://github.com/jorexdeveloper
 REPOSITORY=gemini-cli
 AUTHOR=Jore
@@ -1162,6 +1181,7 @@ QUIET=
 CLIPBOARD=
 USER_PROMPT=
 LIST_MODELS_NO_HEADER=
+RETRY_CONN_ERROR=
 
 log -d "Initializing API configuration."
 # API configuration
@@ -1172,7 +1192,7 @@ API_URL=https://generativelanguage.googleapis.com
 
 # Process command line options
 log -i "Processing commandline arguments."
-while getopts ":Sm:icnNpdsrRjqQlL:vh" opt; do
+while getopts ":Sm:icnNpdsrRjqQlL:xvh" opt; do
 	# TODO: Implement long options while supporting
 	#       combining of short options
 	# shellcheck disable=SC2214
@@ -1236,6 +1256,9 @@ while getopts ":Sm:icnNpdsrRjqQlL:vh" opt; do
 				echo "Log level MUST be an integer from 0 to 5." >&2
 				exit 2
 			fi
+			;;
+		x | --retry-conn-error)
+			RETRY_CONN_ERROR=1
 			;;
 		v | --version)
 			print_version
@@ -1540,6 +1563,17 @@ if [[ ${INTERACTIVE} ]]; then
 							USER_PROMPT=
 							continue
 							;;
+						/x)
+							if [[ ${RETRY_CONN_ERROR} ]]; then
+								RETRY_CONN_ERROR=
+								msg -l "Retry on connection error disabled."
+							else
+								RETRY_CONN_ERROR=1
+								msg -l "Retry on connection error enabled. Use Ctrl+C to stop."
+							fi
+							USER_PROMPT=
+							continue
+							;;
 						/v | /version)
 							msg -l -- "${NAME} ${VERSION} (${API_MODEL/models\//})"
 							USER_PROMPT=
@@ -1563,6 +1597,7 @@ if [[ ${INTERACTIVE} ]]; then
 									  /clear       Clear current chat.
 									  /new         Start a new chat.
 									  /list        List supported API models.
+									  /x           Toggle retry on connection error.
 									  /version     Print version information.
 									  /help        Print help information.
 
