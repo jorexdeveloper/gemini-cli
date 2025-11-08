@@ -4,7 +4,7 @@
 #                                                                              #
 # Gemini CLI                                                                   #
 #                                                                              #
-# Command-line AI assistant.                                                   #
+# Command-line AI assistant powered by Google Gemini.                          #
 #                                                                              #
 # Copyright (C) 2025 Jore <https://github.com/jorexdeveloper>                  #
 #                                                                              #
@@ -34,7 +34,6 @@
 ################################################################################
 init_history() {
 	local from=init_history
-
 	if [[ ${HISTORY_ENABLED} ]]; then
 		log -i "Initializing chat history."
 		local use_file=
@@ -101,7 +100,7 @@ add_to_history() {
 				if ! {
 					mkdir -p "${HISTORY_DIR}" &&
 						printf %s "${CHAT_HISTORY}" >"${HIST_TEMP_FILE}" &&
-						mv "${HIST_TEMP_FILE}" "${HISTORY_FILE}"
+						mv -f "${HIST_TEMP_FILE}" "${HISTORY_FILE}"
 				}; then
 					log -e "Failed to write chat history to file: ${HISTORY_FILE}"
 					return 2
@@ -146,7 +145,7 @@ create_new_chat() {
 				log -df "${from}" "Backing up current history to file: ${file}"
 				if ! {
 					mkdir -p "${HISTORY_DIR}" &&
-						mv "${HISTORY_FILE}" "${file}"
+						mv -f "${HISTORY_FILE}" "${file}"
 				}; then
 					log -e "Failed to backup current history to file: ${file}"
 					return 1
@@ -237,6 +236,7 @@ get_models() {
 		elif [[ ${RETRY_CONN_ERROR} ]]; then
 			continue
 		else
+			trap - INT
 			API_MESSAGE="Failed to get API response. Please check your internet connection and try again."
 			return 1
 		fi
@@ -321,6 +321,7 @@ get_response() {
 		elif [[ ${RETRY_CONN_ERROR} ]]; then
 			continue
 		else
+			trap - INT
 			API_MESSAGE="Failed to get API response. Please check your internet connection and try again."
 			return 1
 		fi
@@ -519,7 +520,7 @@ print_chat() {
 
 					msg -l"${role}" -- "${message}"
 
-					if [[ ${CHAT_SEPARATOR} && ${role} == m && $((index + 1)) -lt ${#indices[@]} ]]; then
+					if [[ ${CHAT_SEPARATOR} && ${role} == m ]]; then
 						msg -S
 					fi
 				done
@@ -569,10 +570,6 @@ header() {
 msg() {
 	local from=msg
 	if [[ ${RAW_OUTPUT} ]]; then
-		H_PRE=
-		N_PRE=
-		I_PRE=
-		F_PRE=
 		H_PREFIX=
 		N_PREFIX=
 		I_PREFIX=
@@ -580,26 +577,39 @@ msg() {
 		M_PREFIX=
 		U_PREFIX=
 		E_PREFIX=
+
+		H_PROMPT=
+		N_PROMPT=
+		I_PROMPT=
+		F_PROMPT=
+		M_PROMPT=
+		U_PROMPT=
+		E_PROMPT=
 	else
-		H_PRE="╔═"
-		N_PRE="║ "
-		I_PRE="╠═"
-		F_PRE="╚═"
-		H_PREFIX="═o "
-		N_PREFIX="   "
-		I_PREFIX="═o "
-		F_PREFIX="═o "
-		M_PREFIX="  "
-		U_PREFIX="  "
-		E_PREFIX="󰀦  "
+		H_PREFIX=" "
+		N_PREFIX=" "
+		I_PREFIX=" "
+		F_PREFIX=" "
+		M_PREFIX="${BBG3} ${BGR}"
+		U_PREFIX="${BBG5} ${BGR}"
+		E_PREFIX="${BBG1} ${BGR}"
+
+		H_PROMPT=" "
+		N_PROMPT=" "
+		I_PROMPT=" "
+		F_PROMPT=" "
+		M_PROMPT=" "
+		U_PROMPT=" "
+		E_PROMPT=" "
 	fi
 
 	local role=${NAME}
-	local text_color=${C0}
-	local default_pre_color=${C7}
-	local pre_color=${default_pre_color}
+	local dtc=${FG7}
+	local text_color=${dtc}
+	local dpc=${BFG0}
+	local prompt_color=${dpc}
+	local prompt=${N_PROMPT}
 	local prefix=${N_PREFIX}
-	local pre=${N_PRE}
 
 	local separator_before=
 	local separator_after=
@@ -608,84 +618,95 @@ msg() {
 	local r_before=
 	local n_after=1
 
-	# while getopts ":hHmMfFauersNLn" opt; do
 	while getopts ":hHiIfFmMuUeEsSlLrn" opt; do
 		case "${opt}" in
 			h)
 				# Header
-				text_color=${C6}
-				pre_color=${default_pre_color}
+				text_color=${BFG4}
+				prompt_color=${BFG4}
+				prompt=${H_PROMPT}
 				prefix=${H_PREFIX}
-				pre=${H_PRE}
 				;;
 			H)
-				# Header (no prefix)
-				text_color=${C6}
-				pre_color=${default_pre_color}
-				prefix=${N_PREFIX}
-				pre=${N_PRE}
+				# Header (no prompt)
+				text_color=${BFG4}
+				prompt_color=${BFG4}
+				prompt=${H_PROMPT}
+				prefix=${H_PREFIX}
 				;;
 			i)
-				# Important
-				text_color=${C8}
-				pre_color=${default_pre_color}
+				# Info
+				text_color=${BFG0}
+				prompt_color=${BFG0}
+				prompt=${I_PROMPT}
 				prefix=${I_PREFIX}
-				pre=${I_PRE}
 				;;
 			I)
-				# Important (no prefix)
-				text_color=${C8}
-				pre_color=${default_pre_color}
-				prefix=${N_PREFIX}
-				pre=${N_PRE}
+				# Info (no prompt)
+				text_color=${BFG0}
+				prompt_color=${BFG0}
+				prompt=${I_PROMPT}
+				prefix=${I_PREFIX}
 				;;
 			f)
 				# Footer
-				text_color=${C8}
-				pre_color=${default_pre_color}
+				text_color=${dtc}
+				prompt_color=${dpc}
+				prompt=${F_PROMPT}
 				prefix=${F_PREFIX}
-				pre=${F_PRE}
 				;;
 			F)
-				# Footer (no prefix)
-				text_color=${C8}
-				pre_color=${default_pre_color}
-				prefix=${N_PREFIX}
-				pre=${N_PRE}
+				# Footer (no prompt)
+				text_color=${dtc}
+				prompt_color=${dpc}
+				prompt=${F_PROMPT}
+				prefix=${F_PREFIX}
 				;;
 			m)
 				# Model
-				pre_color=${C3}
+				text_color=${FG7}
+				prompt_color=${BFG3}
+				prompt=${M_PROMPT}
 				prefix=${M_PREFIX}
 				role=model
 				;;
 			M)
-				# Model (no prefix)
-				pre_color=${C3}
-				prefix=${N_PREFIX}
+				# Model (no prompt)
+				text_color=${FG7}
+				prompt_color=${BFG3}
+				prompt=${M_PROMPT}
+				prefix=${M_PREFIX}
 				role=model
 				;;
 			u)
 				# User
-				pre_color=${C5}
+				text_color=${FG7}
+				prompt_color=${BFG5}
+				prompt=${U_PROMPT}
 				prefix=${U_PREFIX}
 				role=user
 				;;
 			U)
-				# User (no prefix)
-				pre_color=${C5}
-				prefix=${N_PREFIX}
+				# User (no prompt)
+				text_color=${FG7}
+				prompt_color=${BFG5}
+				prompt=${M_PROMPT}
+				prefix=${U_PREFIX}
 				role=user
 				;;
 			e)
 				# Error
-				pre_color=${C1}
+				text_color=${FG7}
+				prompt_color=${BFG1}
+				prompt=${E_PROMPT}
 				prefix=${E_PREFIX}
 				;;
 			E)
-				# Error (no prefix)
-				pre_color=${C1}
-				prefix=${N_PREFIX}
+				# Error (no prompt)
+				text_color=${FG7}
+				prompt_color=${BFG1}
+				prompt=${E_PROMPT}
+				prefix=${E_PREFIX}
 				;;
 			s)
 				# Print separator before
@@ -732,37 +753,36 @@ msg() {
 		fi
 	else
 		if [[ ${RAW_OUTPUT} && ${TERM_OUTPUT} ]]; then
-			text_color=${pre_color}
+			text_color=${prompt_color}
 		fi
 
 		if [[ ${TERM_INPUT} ]]; then
 			local width=$(stty size | cut -d' ' -f2)
 		else
-			local width=${TERM_WIDTH:-60}
+			local width=${TERM_WIDTH:-50}
 		fi
 		if [[ ${RAW_OUTPUT} ]]; then
 			size=${width}
 		else
-			size=$((width - 5))
+			size=$((width - (${#N_PREFIX} + ${#N_PROMPT})))
 		fi
 
 		print_separator() {
 			if [[ ! ${RAW_OUTPUT} ]]; then
-				local i=${width}
-				local s=╠
+				local i=${size}
+				local s=
 				while [[ ${i} -gt 2 ]]; do
-					s+=═
+					s+=—
 					((i--))
 				done
-				s+=o
 			else
 				s=---
 			fi
-			printf "${default_pre_color}%s${C0}" "${s}"
+			printf "${N_PREFIX}${dpc}${N_PROMPT}${R}%s" "${s}"
 		}
 
 		if [[ ${empty_line_before} ]]; then
-			printf "${default_pre_color}%s${C0}\n" "${N_PRE}"
+			printf "${N_PREFIX}${dpc}${N_PROMPT}${R}%s\n"
 		fi
 
 		if [[ ${separator_before} ]]; then
@@ -774,15 +794,16 @@ msg() {
 		fi
 
 		local line
+		local pref=${prefix}
 		if [[ ${RAW_OUTPUT} ]]; then
-			printf %s\\n "${*}" | bat --color="${COLOR_STATUS}" --language=markdown
+			printf %s\\n "${*}" | ${HIGHLIGTER} "${HIGHLIGTER_ARGS[@]}"
 		else
-			printf %s\\n "${*}" | fmt -sw "${size}" -g "${size}" | bat --color="${COLOR_STATUS}" --language=markdown
+			printf %s\\n "${*}" | fmt -sw "${size}" -g "${size}" | ${HIGHLIGTER} "${HIGHLIGTER_ARGS[@]}"
 		fi | sed "s/^/‌/" |
 			while read -r line; do
-				printf "${pre_color}${pre}${prefix}${text_color}%s${C0}" "${line}"
-				prefix=${N_PREFIX}
-				pre=\\n${N_PRE}
+				printf "${pref}${prompt_color}${prompt}${text_color}%s${R}" "${line}"
+				prompt=${N_PROMPT}
+				pref=\\n${prefix}
 			done | sed "s/‌//"
 
 		if [[ ${separator_after} ]]; then
@@ -791,7 +812,7 @@ msg() {
 		fi
 
 		if [[ ${empty_line_after} ]]; then
-			printf "\n${default_pre_color}%s${C0}" "${N_PRE}"
+			printf "\n${N_PREFIX}${dpc}${N_PROMPT}${R}%s"
 		fi
 
 		if [[ ${n_after} ]]; then
@@ -851,18 +872,10 @@ list_models() {
 				'$API_MESSAGE | sort_by(.name) | .[].name | sub("models/"; "")'
 		else
 			log -df "${from}" "Creating formatted response."
-			if [[ ! ${LIST_MODELS_NO_HEADER} ]]; then
-				header -L
-			fi
-
 			msg "$(jq \
 				-nr \
 				--argjson API_MESSAGE "${API_MESSAGE}" \
 				'"# Supported API models" + "\n", ($API_MESSAGE | sort_by(.name) | .[] | "## " + .displayName + " (`" + (.name | sub("models/"; "")) + "`)", (.description // "No description") + "\n")')"
-
-			if [[ ! ${LIST_MODELS_NO_HEADER} ]]; then
-				footer -l
-			fi
 		fi
 	else
 		case "${response_code}" in
@@ -973,55 +986,213 @@ print_help() {
 }
 
 ################################################################################
-# Initializes color variables.                                                 #
+# Sets ANSI color variables.                                                   #
 ################################################################################
-set_colors() {
-	# shellcheck disable=SC2034
+colors() {
 	if [[ ${COLOR_ENABLED} && ${TERM_OUTPUT} ]]; then
-		C0=$'\e[0m'  # reset
-		C1=$'\e[91m' # red
-		C2=$'\e[92m' # green
-		C3=$'\e[93m' # yellow
-		C4=$'\e[94m' # blue
-		C5=$'\e[95m' # magenta
-		C6=$'\e[96m' # cyan
-		C7=$'\e[97m' # white
-		C8=$'\e[90m' # grey
-		COLOR_STATUS=always
+		local set_normal_colors=1
+		local set_error_colors=1
 	else
-		C0=
-		C1=
-		C2=
-		C3=
-		C4=
-		C5=
-		C6=
-		C7=
-		C8=
-		COLOR_STATUS=never
+		local set_normal_colors=
+		local set_error_colors=
+	fi
+
+	while getopts ":nNeEaA" OPT; do
+		case "${OPT}" in
+			n)
+				set_normal_colors=1
+				;;
+			N)
+				set_normal_colors=
+				;;
+			e)
+				set_error_colors=1
+				;;
+			E)
+				set_error_colors=
+				;;
+			a)
+				set_normal_colors=1
+				set_error_colors=1
+				;;
+			A)
+				set_normal_colors=
+				set_error_colors=
+				;;
+			*) ;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	unset OPTIND OPT
+
+	# shellcheck disable=SC2034
+	if [[ ${set_normal_colors} ]]; then
+		FG0=$'\e[30m' # grey
+		FG1=$'\e[31m' # red
+		FG2=$'\e[32m' # green
+		FG3=$'\e[33m' # yellow
+		FG4=$'\e[34m' # blue
+		FG5=$'\e[35m' # magenta
+		FG6=$'\e[36m' # cyan
+		FG7=$'\e[37m' # white
+
+		BFG0=$'\e[90m' # grey
+		BFG1=$'\e[91m' # red
+		BFG2=$'\e[92m' # green
+		BFG3=$'\e[93m' # yellow
+		BFG4=$'\e[94m' # blue
+		BFG5=$'\e[95m' # magenta
+		BFG6=$'\e[96m' # cyan
+		BFG7=$'\e[97m' # white
+
+		BG0=$'\e[40m' # grey
+		BG1=$'\e[41m' # red
+		BG2=$'\e[42m' # green
+		BG3=$'\e[43m' # yellow
+		BG4=$'\e[44m' # blue
+		BG5=$'\e[45m' # magenta
+		BG6=$'\e[46m' # cyan
+		BG7=$'\e[47m' # white
+
+		BBG0=$'\e[100m' # grey
+		BBG1=$'\e[101m' # red
+		BBG2=$'\e[102m' # green
+		BBG3=$'\e[103m' # yellow
+		BBG4=$'\e[104m' # blue
+		BBG5=$'\e[105m' # magenta
+		BBG6=$'\e[106m' # cyan
+		BBG7=$'\e[107m' # white
+
+		FGR=$'\e[39m' # reset foreground
+		BGR=$'\e[49m' # reset background
+		R=$'\e[0m'    # reset all
+
+		HIGHLIGHTER_COLOR_STATUS=always
+	else
+		FG0=
+		FG1=
+		FG2=
+		FG3=
+		FG4=
+		FG5=
+		FG6=
+		FG7=
+
+		BFG0=
+		BFG1=
+		BFG2=
+		BFG3=
+		BFG4=
+		BFG5=
+		BFG6=
+		BFG7=
+
+		BG0=
+		BG1=
+		BG2=
+		BG3=
+		BG4=
+		BG5=
+		BG6=
+		BG7=
+
+		BBG0=
+		BBG1=
+		BBG2=
+		BBG3=
+		BBG4=
+		BBG5=
+		BBG6=
+		BBG7=
+
+		FGR=
+		BGR=
+		R=
+
+		HIGHLIGHTER_COLOR_STATUS=never
 	fi
 
 	# shellcheck disable=SC2034
-	if [[ ${COLOR_ENABLED} && ${TERM_ERROR} ]]; then
-		EC0=$'\e[0m'  # reset
-		EC1=$'\e[41m' # red
-		EC2=$'\e[92m' # green
-		EC3=$'\e[93m' # yellow
-		EC4=$'\e[94m' # blue
-		EC5=$'\e[95m' # magenta
-		EC6=$'\e[96m' # cyan
-		EC7=$'\e[97m' # white
-		EC8=$'\e[90m' # grey
+	if [[ ${set_error_colors} ]]; then
+		EFG0=$'\e[30m' # grey
+		EFG1=$'\e[31m' # red
+		EFG2=$'\e[32m' # green
+		EFG3=$'\e[33m' # yellow
+		EFG4=$'\e[34m' # blue
+		EFG5=$'\e[35m' # magenta
+		EFG6=$'\e[36m' # cyan
+		EFG7=$'\e[37m' # white
+
+		EBFG0=$'\e[90m' # grey
+		EBFG1=$'\e[91m' # red
+		EBFG2=$'\e[92m' # green
+		EBFG3=$'\e[93m' # yellow
+		EBFG4=$'\e[94m' # blue
+		EBFG5=$'\e[95m' # magenta
+		EBFG6=$'\e[96m' # cyan
+		EBFG7=$'\e[97m' # white
+
+		EBG0=$'\e[40m' # grey
+		EBG1=$'\e[41m' # red
+		EBG2=$'\e[42m' # green
+		EBG3=$'\e[43m' # yellow
+		EBG4=$'\e[44m' # blue
+		EBG5=$'\e[45m' # magenta
+		EBG6=$'\e[46m' # cyan
+		EBG7=$'\e[47m' # white
+
+		EBBG0=$'\e[100m' # grey
+		EBBG1=$'\e[101m' # red
+		EBBG2=$'\e[102m' # green
+		EBBG3=$'\e[103m' # yellow
+		EBBG4=$'\e[104m' # blue
+		EBBG5=$'\e[105m' # magenta
+		EBBG6=$'\e[106m' # cyan
+		EBBG7=$'\e[107m' # white
+
+		EFGR=$'\e[39m' # reset foreground
+		EBGR=$'\e[49m' # reset background
+		ER=$'\e[0m'    # reset all
 	else
-		EC0=
-		EC1=
-		EC2=
-		EC3=
-		EC4=
-		EC5=
-		EC6=
-		EC7=
-		EC8=
+		EFG0=
+		EFG1=
+		EFG2=
+		EFG3=
+		EFG4=
+		EFG5=
+		EFG6=
+		EFG7=
+
+		EBFG0=
+		EBFG1=
+		EBFG2=
+		EBFG3=
+		EBFG4=
+		EBFG5=
+		EBFG6=
+		EBFG7=
+
+		EBG0=
+		EBG1=
+		EBG2=
+		EBG3=
+		EBG4=
+		EBG5=
+		EBG6=
+		EBG7=
+
+		EBBG0=
+		EBBG1=
+		EBBG2=
+		EBBG3=
+		EBBG4=
+		EBBG5=
+		EBBG6=
+		EBBG7=
+
+		EFGR=
+		EBGR=
+		ER=
 	fi
 }
 
@@ -1046,7 +1217,7 @@ set_colors() {
 log() {
 	local l=4
 	local p=INF
-	local c=${EC4}
+	local c=${EBFG4}
 	local f=${NAME:-EMPTY}
 
 	while getopts ":diwecsf:" opt; do
@@ -1054,32 +1225,32 @@ log() {
 			d)
 				l=5
 				p=DBG
-				c=${EC6}
+				c=${EBFG6}
 				;;
 			s)
 				l=5
 				p=SUC
-				c=${EC2}
+				c=${EBFG2}
 				;;
 			i)
 				l=4
 				p=INF
-				c=${EC4}
+				c=${EBFG4}
 				;;
 			w)
 				l=3
 				p=WRN
-				c=${EC3}
+				c=${EBFG3}
 				;;
 			e)
 				l=2
 				p=ERR
-				c=${EC1}
+				c=${EBG1}
 				;;
 			c)
 				l=1
 				p=CRT
-				c=${EC1}
+				c=${EBG1}
 				;;
 			f)
 				f=${OPTARG}
@@ -1091,7 +1262,7 @@ log() {
 	unset OPTIND
 
 	if [[ ${l} -le ${LOG_LEVEL} ]]; then
-		printf "${EC0}[$(date +'%H:%M:%S')] [${c}${p}${EC0}] from ${EC5}${f}${EC0}: %s\n" "${*}" >&2
+		printf "${ER}[$(date +'%H:%M:%S')] [${c}${p}${ER}] from ${EBFG5}${f}${ER}: %s\n" "${*}" >&2
 	fi
 
 	if [[ ${l} -eq 1 ]]; then
@@ -1124,7 +1295,7 @@ fi
 LOG_LEVEL=2
 NAME=$(basename "${0}")
 COLOR_ENABLED=1
-set_colors
+colors
 
 log -d "Starting program: LOG_LEVEL=${LOG_LEVEL}"
 if [[ ${TERM_INPUT} ]]; then
@@ -1165,6 +1336,9 @@ HISTORY_FILE_ENABLED=1
 HISTORY_DIR="${SOURCE_DIR}"/history
 HISTORY_FILE="${SOURCE_DIR}"/chat.json
 
+HIGHLIGTER=bat
+HIGHLIGTER_ARGS=(--color="${HIGHLIGHTER_COLOR_STATUS}" --language=markdown)
+
 # Prevent shell overrides
 GEMINI_API_KEY=
 SAVE_API_KEY=
@@ -1180,7 +1354,6 @@ JSON_RESPONSE=
 QUIET=
 CLIPBOARD=
 USER_PROMPT=
-LIST_MODELS_NO_HEADER=
 RETRY_CONN_ERROR=
 
 log -d "Initializing API configuration."
@@ -1197,59 +1370,59 @@ while getopts ":Sm:icnNpdsrRjqQlL:xvh" opt; do
 	#       combining of short options
 	# shellcheck disable=SC2214
 	case "${opt}" in
-		S | --save-api-key)
+		S)
 			SAVE_API_KEY=1
 			;;
-		m | --api-model)
+		m)
 			API_MODEL=models/"${OPTARG#models/}"
 			;;
-		i | --interactive)
+		i)
 			INTERACTIVE=1
 			;;
-		c | --print-chat)
+		c)
 			PRINT_CHAT=1
 			;;
-		n | --new-chat)
+		n)
 			NEW_CHAT=1
 			;;
-		N | --new-chat-no-save)
+		N)
 			NEW_CHAT_NO_SAVE=1
 			;;
-		p | --private-chat)
+		p)
 			HISTORY_FILE_ENABLED=
 			SAVE_RESPONSE=
 			;;
-		d | --disable-history)
+		d)
 			HISTORY_ENABLED=
 			;;
-		s | --separator)
+		s)
 			CHAT_SEPARATOR=1
 			;;
-		r | --raw-output)
+		r)
 			RAW_OUTPUT=1
 			;;
-		R | --raw-input)
+		R)
 			RAW_INPUT=1
 			;;
-		j | --json)
+		j)
 			JSON_RESPONSE=1
 			RAW_OUTPUT=1
 			;;
-		q | --quiet)
+		q)
 			QUIET=1
 			;;
-		Q | --quiet-raw)
+		Q)
 			RAW_OUTPUT=1
 			QUIET=1
 			;;
-		l | --list-models)
+		l)
 			if [[ ${MAIN_ACTION} == LIST_MODELS ]]; then
 				MAIN_ACTION=LIST_MODELS_WITH_LIST
 			else
 				MAIN_ACTION=LIST_MODELS
 			fi
 			;;
-		L | --log-level)
+		L)
 			if [[ ${OPTARG} =~ ^[0-5]$ ]]; then
 				LOG_LEVEL=${OPTARG}
 			else
@@ -1257,14 +1430,14 @@ while getopts ":Sm:icnNpdsrRjqQlL:xvh" opt; do
 				exit 2
 			fi
 			;;
-		x | --retry-conn-error)
+		x)
 			RETRY_CONN_ERROR=1
 			;;
-		v | --version)
+		v)
 			print_version
 			exit
 			;;
-		h | --help)
+		h)
 			print_help
 			exit
 			;;
@@ -1284,7 +1457,7 @@ log -d "Processed all commandline arguments."
 
 # Check for dependencies
 log -i "Checking for dependencies."
-for cmd in curl fmt jq bat; do
+for cmd in curl fmt jq "${HIGHLIGTER}"; do
 	if ! command -v "${cmd}" &>/dev/null; then
 		log -c "${cmd} is required but not installed."
 	fi
@@ -1344,8 +1517,6 @@ fi
 if [[ ${HISTORY_ENABLED} ]]; then
 	if [[ ${HISTORY_FILE_ENABLED} ]]; then
 		HIST_TEMP_FILE=${HISTORY_FILE}.tmp
-		trap 'rm -f -- "${HIST_TEMP_FILE}"' EXIT
-		trap 'exit' INT TERM
 		log -d "Temp file created: ${HIST_TEMP_FILE}"
 	fi
 
@@ -1366,7 +1537,7 @@ if [[ ${TERM_OUTPUT} && ${TERM_ERROR} ]]; then
 		exec 2>"${TMP_LOG}"; then
 		log -i "Temporarily redirecting logs."
 		log -d "Temporarily redirecting logs to file: ${TMP_LOG}"
-		trap 'cat "${TMP_LOG}"; rm -f -- "${HIST_TEMP_FILE}" "${TMP_LOG}"' EXIT
+		trap 'cat "${TMP_LOG}"; rm -f -- "${TMP_LOG}"' EXIT
 		trap 'exit' INT TERM
 	else
 		log -e "Failed to temporarily redirect logs to file: ${TMP_LOG}"
@@ -1382,7 +1553,7 @@ if [[ ${INTERACTIVE} ]]; then
 		print_chat "${CHAT_HISTORY}"
 	fi
 
-	if ! [[ ${QUIET} || ${RAW_OUTPUT} ]]; then
+	if ! [[ ${QUIET} || ${RAW_OUTPUT} || ${PRINT_CHAT} ]]; then
 		if [[ ${CHAT_SEPARATOR} ]]; then
 			msg -S "Type '/help' for more information."
 		else
@@ -1399,19 +1570,26 @@ if [[ ${INTERACTIVE} ]]; then
 			if [[ ${TERM_OUTPUT} ]]; then
 				msg -uln
 			fi
-			read -r USER_PROMPT || READ_EOF=1
-			if [[ ! ${TERM_OUTPUT} ]]; then
+
+			# GNU readline (option -e for read) workarounds
+			# 1. Needs fd 2; FIX: Temporary redirects in case it's somewhere else
+			# 2. Deletes extra chars on backspace; FIX: Add special prompt
+			exec 3>&2 2>&1
+			read -rep $'\e[0m ' USER_PROMPT || READ_EOF=1
+			exec 2>&3 3>&-
+
+			if [[ ${READ_EOF} ]]; then
+				if [[ ${TERM_OUTPUT} ]]; then
+					printf \\n
+				fi
+				break
+			fi
+
+			if ! [[ ${TERM_OUTPUT} || ${READ_EOF} ]]; then
 				msg -ul -- "${USER_PROMPT}"
 			fi
 		else
 			msg -ul -- "${USER_PROMPT}"
-		fi
-
-		if [[ ${READ_EOF} ]]; then
-			if [[ ${TERM_OUTPUT} ]]; then
-				printf \\n
-			fi
-			break
 		fi
 
 		if [[ ! ${LAST_PROMPT} && ${HISTORY_ENABLED} ]]; then
@@ -1558,7 +1736,6 @@ if [[ ${INTERACTIVE} ]]; then
 							continue
 							;;
 						/l | /list)
-							LIST_MODELS_NO_HEADER=1
 							list_models
 							USER_PROMPT=
 							continue
@@ -1683,8 +1860,6 @@ if [[ ${INTERACTIVE} ]]; then
 			print_usage_stats -li
 		fi
 	done
-
-	footer -l
 else
 	log -i "Starting non-interactive mode."
 	if create_entry -u -- "${USER_PROMPT}"; then
@@ -1727,7 +1902,7 @@ else
 			print_response
 		fi
 
-		print_usage_stats -lf || footer -l
+		print_usage_stats -li || footer -l
 	else
 		case "${API_RESPONSE_CODE}" in
 			3) api_error ;;
