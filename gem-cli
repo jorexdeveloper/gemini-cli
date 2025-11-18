@@ -22,7 +22,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.       #
 #                                                                              #
 ################################################################################
-# shellcheck disable=SC2155
+# shellcheck disable=SC2329,SC2155
 
 ################################################################################
 # Initializes chat history.                                                    #
@@ -446,7 +446,7 @@ print_response() {
 			--argjson API_MESSAGE "${CHAT_ENTRY}" \
 			'$API_MESSAGE'
 	else
-		msg -m "${@}" -- "${API_MESSAGE}"
+		msg -m "${@}" -- "${API_MESSAGE}" | ${PAGER} "${PAGER_ARGS[@]}"
 	fi
 }
 
@@ -518,7 +518,11 @@ print_chat() {
 							'$arg[$index].parts[0].text'
 					)
 
-					msg -l"${role}" -- "${message}"
+					if [[ ${PRINT_CHAT_NO_FIRST_LINE} && ${index} -eq 0 ]]; then
+						msg -"${role}" -- "${message}"
+					else
+						msg -l"${role}" -- "${message}"
+					fi
 
 					if [[ ${CHAT_SEPARATOR} && ${role} == m ]]; then
 						msg -S
@@ -543,13 +547,9 @@ print_chat() {
 ################################################################################
 header() {
 	local from=header
-	if [[ ! ${RAW_OUTPUT} ]]; then
+	if ! [[ ${QUIET} || ${RAW_OUTPUT} ]]; then
 		log -df "${from}" "Printing header."
-		if [[ ! ${QUIET} ]]; then
-			msg -h "${@}" "${NAME} ${VERSION} (${API_MODEL/models\//})"
-		else
-			msg -h "${@}"
-		fi
+		msg -h "${@}" "${NAME} ${VERSION} (${API_MODEL/models\//})"
 	else
 		return 1
 	fi
@@ -756,15 +756,10 @@ msg() {
 			text_color=${prompt_color}
 		fi
 
-		if [[ ${TERM_INPUT} ]]; then
-			local width=$(stty size | cut -d' ' -f2)
-		else
-			local width=${TERM_WIDTH:-50}
-		fi
 		if [[ ${RAW_OUTPUT} ]]; then
-			size=${width}
+			size=${TERM_WIDTH}
 		else
-			size=$((width - (${#N_PREFIX} + ${#N_PROMPT})))
+			size=$((TERM_WIDTH - (${#N_PREFIX} + ${#N_PROMPT})))
 		fi
 
 		print_separator() {
@@ -787,6 +782,7 @@ msg() {
 
 		if [[ ${separator_before} ]]; then
 			print_separator
+			printf \\n
 		fi
 
 		if [[ ${r_before} ]]; then
@@ -831,13 +827,9 @@ msg() {
 ################################################################################
 footer() {
 	local from=footer
-	if [[ ! ${RAW_OUTPUT} ]]; then
+	if ! [[ ${QUIET} || ${RAW_OUTPUT} ]]; then
 		log -df "${from}" "Printing footer."
-		if [[ ! ${QUIET} ]]; then
-			msg -f "${@}" # "Session ended"
-		else
-			msg -f "${@}"
-		fi
+		msg -f "${@}"
 	else
 		return 1
 	fi
@@ -941,7 +933,7 @@ clipboard() {
 # Prints version information.                                                  #
 ################################################################################
 print_version() {
-	echo "${NAME^} version ${VERSION}"
+	echo "${NAME} version ${VERSION}"
 	echo "Copyright (C) 2025 ${AUTHOR} <${GITHUB}>."
 	echo "License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>."
 	echo
@@ -983,6 +975,81 @@ print_help() {
 	echo
 	echo "LEARN MORE"
 	echo "  ${GITHUB}/${REPOSITORY}"
+}
+
+################################################################################
+# Starts an animation (it's a bit buggy, only run one at a time)               #
+#                                                                              #
+# Sets Global variables:                                                       #
+#    ANIM_PID                                                                  #
+# Args:                                                                        #
+#     OPTIONS (see case inside)                                                #
+#     Prefix message                                                           #
+################################################################################
+animation() {
+	local frames=('   ' '.  ' '.. ' '...')
+	local interval=0.1
+	local start=1
+
+	while getopts ":s" opt; do
+		case "${opt}" in
+			s)
+				start=
+				continue
+				;;
+			*) ;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	unset OPTARG OPTIND opt
+
+	_animate() {
+		local frame
+		while true; do
+			for frame in "${frames[@]}"; do
+				printf "${BFG3}%s${FGR}\b\b\b" "${frame}"
+				sleep "${interval}"
+			done
+		done
+	}
+
+	if [[ ${start} ]]; then
+		local pid_file
+		pid_file=$(mktemp --tmpdir) && {
+			(
+				stty -echo
+				printf "\e[?25l"
+				_animate "${@}" &
+				printf "%s\n" "${!}" >"${pid_file}"
+			)
+
+			ANIM_PID=$(cat "${pid_file}")
+			rm -f "${pid_file}"
+		}
+	else
+		local ifs_old=${IFS}
+		local tty_settings=$(stty -g)
+
+		# -isig:     Disable processing of INTR, QUIT, SUSP characters (e.g., Ctrl+C, Ctrl+Z)
+		# -icanon:   Disable canonical (line-buffered) input (Input is read character by character)
+		stty -icanon -isig
+
+		# Clear terminal input
+		while IFS= read -r -n 1 -t 0.01 _; do
+			:
+		done
+
+		stty "${tty_settings}"
+		IFS=${ifs_old}
+
+		printf "\e[?25h"
+		stty echo
+
+		if [[ ${ANIM_PID} ]]; then
+			kill "${ANIM_PID}"
+			ANIM_PID=
+		fi
+	fi
 }
 
 ################################################################################
@@ -1274,10 +1341,14 @@ log() {
 # Entry point of program.                                                      #
 ################################################################################
 
+# shellcheck disable=SC2034
 if [[ -t 0 ]]; then
 	TERM_INPUT=1
+	read -r TERM_HEIGHT TERM_WIDTH < <(stty size)
 else
 	TERM_INPUT=
+	TERM_WIDTH=50
+	TERM_HEIGHT=50
 fi
 
 if [[ -t 1 ]]; then
@@ -1339,6 +1410,9 @@ HISTORY_FILE="${SOURCE_DIR}"/chat.json
 HIGHLIGTER=bat
 HIGHLIGTER_ARGS=(--color="${HIGHLIGHTER_COLOR_STATUS}" --language=markdown)
 
+PAGER=less
+PAGER_ARGS=(--tabs=4 -RFX)
+
 # Prevent shell overrides
 GEMINI_API_KEY=
 SAVE_API_KEY=
@@ -1355,6 +1429,7 @@ QUIET=
 CLIPBOARD=
 USER_PROMPT=
 RETRY_CONN_ERROR=
+PRINT_CHAT_NO_FIRST_LINE=
 
 log -d "Initializing API configuration."
 # API configuration
@@ -1366,9 +1441,6 @@ API_URL=https://generativelanguage.googleapis.com
 # Process command line options
 log -i "Processing commandline arguments."
 while getopts ":Sm:icnNpdsrRjqQlL:xvh" opt; do
-	# TODO: Implement long options while supporting
-	#       combining of short options
-	# shellcheck disable=SC2214
 	case "${opt}" in
 		S)
 			SAVE_API_KEY=1
@@ -1457,7 +1529,7 @@ log -d "Processed all commandline arguments."
 
 # Check for dependencies
 log -i "Checking for dependencies."
-for cmd in curl fmt jq "${HIGHLIGTER}"; do
+for cmd in curl fmt jq "${HIGHLIGTER}" "${PAGER}"; do
 	if ! command -v "${cmd}" &>/dev/null; then
 		log -c "${cmd} is required but not installed."
 	fi
@@ -1559,10 +1631,10 @@ if [[ ${INTERACTIVE} ]]; then
 		else
 			msg "Type '/help' for more information."
 		fi
+	fi
 
-		if ! [[ ${USER_PROMPT} || ${PRINT_CHAT} ]]; then
-			msg -ml "Hi, can I assist you?"
-		fi
+	if ! [[ ${QUIET} || ${USER_PROMPT} || ${PRINT_CHAT} ]]; then
+		msg -ml "Hi, can I assist you?"
 	fi
 
 	while true; do
@@ -1574,7 +1646,7 @@ if [[ ${INTERACTIVE} ]]; then
 			read -r USER_PROMPT || READ_EOF=1
 
 			if [[ ${READ_EOF} ]]; then
-				if [[ ${TERM_OUTPUT} ]]; then
+				if [[ ${TERM_OUTPUT} && ! ${RAW_OUTPUT} ]]; then
 					printf \\n
 				fi
 				break
@@ -1791,7 +1863,9 @@ if [[ ${INTERACTIVE} ]]; then
 		fi
 
 		if ! [[ ${QUIET} || ${RAW_OUTPUT} ]] && [[ ${TERM_OUTPUT} ]]; then
-			msg -mln "Thinking..."
+			printf '\e[?25l'
+			msg -mln "Thinking"
+			animation
 		else
 			msg
 		fi
@@ -1811,6 +1885,7 @@ if [[ ${INTERACTIVE} ]]; then
 		log -d "API_RESPONSE_CODE=${API_RESPONSE_CODE}"
 
 		if [[ ${TERM_OUTPUT} ]]; then
+			animation -s
 			printf \\r
 		fi
 
@@ -1850,13 +1925,20 @@ if [[ ${INTERACTIVE} ]]; then
 		USER_PROMPT=
 
 		if [[ ${CHAT_SEPARATOR} ]]; then
-			print_usage_stats -lIS || msg -S
+			print_usage_stats -lIs || msg -S
 		else
 			print_usage_stats -li
 		fi
 	done
 else
 	log -i "Starting non-interactive mode."
+
+	if ! [[ ${QUIET} || ${RAW_OUTPUT} ]] && [[ ${TERM_OUTPUT} ]]; then
+		printf '\e[?25l'
+		msg -mn "Thinking"
+		animation
+	fi
+
 	if create_entry -u -- "${USER_PROMPT}"; then
 		USER_ENTRY=${CHAT_ENTRY}
 	else
@@ -1870,6 +1952,11 @@ else
 	fi
 	API_RESPONSE_CODE=${?}
 	log -d "API_RESPONSE_CODE=${API_RESPONSE_CODE}"
+
+	if [[ ${TERM_OUTPUT} ]]; then
+		animation -s
+		printf \\r
+	fi
 
 	if [[ ${API_RESPONSE_CODE} -eq 0 ]]; then
 		if [[ ${SAVE_RESPONSE} ]]; then
@@ -1892,12 +1979,20 @@ else
 		header -L
 
 		if [[ ${PRINT_CHAT} ]]; then
-			print_chat "${CHAT_HISTORY}"
+			PRINT_CHAT_NO_FIRST_LINE=1 print_chat "${CHAT_HISTORY}"
 		else
 			print_response
+
+			if [[ ${CHAT_SEPARATOR} ]]; then
+				msg -S
+			fi
 		fi
 
-		print_usage_stats -li || footer -l
+		if [[ ${CHAT_SEPARATOR} ]]; then
+			print_usage_stats -i
+		else
+			print_usage_stats -li
+		fi
 	else
 		case "${API_RESPONSE_CODE}" in
 			3) api_error ;;
@@ -1905,6 +2000,6 @@ else
 			*) log -e "${API_MESSAGE}" ;;
 		esac
 	fi
-
-	exit "${API_RESPONSE_CODE:-0}"
 fi
+
+exit "${API_RESPONSE_CODE:-0}"
