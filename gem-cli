@@ -1571,12 +1571,7 @@ if [[ ${INTERACTIVE} ]]; then
 				msg -uln
 			fi
 
-			# GNU readline (option -e for read) workarounds
-			# 1. Needs fd 2; FIX: Temporary redirects in case it's somewhere else
-			# 2. Deletes extra chars on backspace; FIX: Add special prompt
-			exec 3>&2 2>&1
-			read -rep $'\e[0m ' USER_PROMPT || READ_EOF=1
-			exec 2>&3 3>&-
+			read -r USER_PROMPT || READ_EOF=1
 
 			if [[ ${READ_EOF} ]]; then
 				if [[ ${TERM_OUTPUT} ]]; then
